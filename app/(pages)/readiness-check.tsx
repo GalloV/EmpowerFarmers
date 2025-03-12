@@ -48,7 +48,7 @@ const ReadinessCheck = () => {
       <Pressable
         style={styles.closeButton}
         onPress={() =>
-          navigation.reset({ index: 0, routes: [{ name: "index" }] })
+          navigation.reset({ index: 0, routes: [{ name: "index" as never }] })
         }
       >
         <Text style={styles.closeText}>✕</Text>

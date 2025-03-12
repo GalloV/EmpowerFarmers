@@ -12,14 +12,12 @@ import * as FileSystem from "expo-file-system";
 import { useLocalSearchParams } from "expo-router";
 import { useAuthRequest } from "expo-auth-session/providers/google";
 import * as AuthSession from "expo-auth-session";
-import { Link } from "expo-router"; // Import the Link component for navigation
+import { Link } from "expo-router";
 
 const GOOGLE_CLIENT_ID =
   "117838464217-c3car0drrpt12mc4euk1fln59s8kr93i.apps.googleusercontent.com";
 
-const redirectUri = AuthSession.makeRedirectUri({
-  // Ensures compatibility with Expo Go
-});
+const redirectUri = AuthSession.makeRedirectUri({});
 
 const CropDetailScreen = () => {
   const [loading, setLoading] = useState(false);
