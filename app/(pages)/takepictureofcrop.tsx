@@ -1,4 +1,7 @@
+// CameraScreen.tsx
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
+import * as FileSystem from "expo-file-system";
+import axios from "axios";
 import { useRef, useState, useEffect } from "react";
 import {
   Button,
@@ -12,87 +15,155 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useCrops } from "../CropProvider";
 import { AntDesign } from "@expo/vector-icons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as ImageManipulator from 'expo-image-manipulator';
 
-const cropphotoexample = require("../../assets/images/pagesassets/cropphotoexample.png");
+
 
 const CameraScreen = () => {
+  // 1️⃣ State & refs
   const [facing, setFacing] = useState<CameraType>("back");
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [parsedCrop, setParsedCrop] = useState<any>(null);
   const cameraRef = useRef<CameraView>(null);
   const router = useRouter();
   const { crop } = useLocalSearchParams();
   const { updateCrop } = useCrops();
 
+  // 2️⃣ Parse any incoming crop data
   useEffect(() => {
     if (crop && typeof crop === "string") {
-      setParsedCrop(JSON.parse(crop));
+      updateCrop(JSON.parse(crop)); // initialize
     }
   }, [crop]);
 
-  if (!permission) {
-    return <View />;
-  }
-
+  // 3️⃣ Ensure camera permission
+  if (!permission) return <View />;
   if (!permission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>
-          We need your permission to show the camera
-        </Text>
+        <Text style={styles.message}>We need camera permission</Text>
         <Button onPress={requestPermission} title="Grant Permission" />
       </View>
     );
   }
 
+  // 4️⃣ Toggle front/back
   function toggleCameraFacing() {
-    setFacing((current) => (current === "back" ? "front" : "back"));
+    setFacing((cur) => (cur === "back" ? "front" : "back"));
   }
 
-  async function takePicture() {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      if (photo && photo.uri) {
-        setPhotoUri(photo.uri);
-      }
+  async function prepareImage(uri: string) {
+    // Resize to max width of 800px and compress to 70% quality
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 800 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    return result.uri;
+  }
+  
+  async function runInferenceBase64(imageUri: string) {
+    const apiKey  = "o6n9K6mfX5gSzdojmv2p";
+    const modelId = "sorghum-da8cy";
+    const version = "3";
+  
+    // 1. Read and encode
+    const base64 = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  
+    // 2. POST raw Base64
+    const endpoint =
+      `https://detect.roboflow.com/${modelId}/${version}?api_key=${apiKey}`;
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: base64,
+    });
+  
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status} — ${await resp.text()}`);
     }
+  
+    const json = await resp.json();
+    console.log("Predictions:", json.predictions);
+    return json.predictions;
+  }
+  
+  // 5️⃣ Inference against Roboflow
+  const runInference = async (imageUri: string) => {
+    try {
+      const apiKey  = "o6n9K6mfX5gSzdojmv2p";
+      const modelId = "empower-farmers/sorghum-da8cy";
+      const version = "3";
+      const endpoint =
+        `https://detect.roboflow.com/${modelId}/${version}?api_key=${apiKey}`;
+  
+      // build the multipart form
+      const form = new FormData();
+      form.append("file", {
+        uri: imageUri,
+        name: "photo.jpg",
+        type: "image/jpeg",
+      } as any);
+  
+      // use fetch instead of axios
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        body: form,
+      });
+  
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} — ${await resp.text()}`);
+      }
+  
+      const json = await resp.json();
+      console.log("Roboflow response:", json);
+      // → inspect json.predictions to count grains, etc.
+    } catch (err: any) {
+      console.error("Inference error:", err.message || err);
+    }
+  };
+    
+  // 6️⃣ Capture photo, display preview, and trigger inference
+  async function takePicture() {
+    if (!cameraRef.current) return;
+    const photo = await cameraRef.current.takePictureAsync();
+    if (photo.uri) {
+      // 1. Shrink it
+      const smallUri = await prepareImage(photo.uri);
+      setPhotoUri(smallUri);
+      // 2. Run inference on the smaller file
+      await runInferenceBase64(smallUri);
+    }
+  }
+  
+
+  // 7️⃣ UI for retake / save into your data flow
+  function handleRetake() {
+    setPhotoUri(null);
   }
 
   function handleSavePhoto() {
-    if (photoUri && parsedCrop) {
-      const updatedCrop = {
-        ...parsedCrop,
-        images: [...parsedCrop.images, photoUri],
-      };
-      setParsedCrop(updatedCrop);
-      updateCrop(updatedCrop);
-      console.log(updatedCrop.images);
-      if (updatedCrop.images.length < updatedCrop.picturesNeeded) {
-        setPhotoUri(null); // Reset photo URI to take more pictures
-      } else {
-        updatedCrop.done = true;
-        router.push("/cropselectionscreen");
-      }
-    }
+    // example of app-specific logic
+    router.push("/cropselectionscreen");
   }
 
-  function handleRetake() {
-    setPhotoUri(null); // Reset photo URI to retake the picture
-  }
-
+  // 8️⃣ Render
   return (
     <View style={styles.container}>
       {!photoUri ? (
         <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-          <View style={styles.eggoverlay}>
-            <View style={styles.eggShape} />
-          </View>
-
+          <View style={styles.eggoverlay} />
           <View style={styles.overlay}>
             <Text style={styles.instructionText}>
-              Try to take the best quality picture!
+              Align the sorghum panicle and press the shutter
             </Text>
+            <TouchableOpacity onPress={toggleCameraFacing}>
+              <MaterialIcons name="flip-camera-ios" size={32} color="#fff" />
+            </TouchableOpacity>
           </View>
           <View style={styles.buttonContainer}>
             <TouchableOpacity
@@ -105,29 +176,13 @@ const CameraScreen = () => {
         </CameraView>
       ) : (
         <View style={styles.previewContainer}>
-          <View style={{ width: "80%" }}>
-            <Text
-              style={{
-                textAlign: "center",
-                color: "#333",
-                fontSize: 20,
-                fontFamily: "Itim",
-              }}
-            >
-              Are you satisfied with the quality of the photo ?
-            </Text>
-          </View>
-          <View style={{ marginTop: 20 }}>
-            <Image source={cropphotoexample} style={styles.previewImage} />
-            <Image source={{ uri: photoUri }} style={styles.previewImage} />
-          </View>
-
+          <Image source={{ uri: photoUri }} style={styles.previewImage} />
           <View style={styles.previewButtons}>
-            <TouchableOpacity style={styles.button} onPress={handleRetake}>
+            <TouchableOpacity onPress={handleRetake} style={styles.button}>
               <AntDesign name="camera" size={24} color="white" />
               <Text style={styles.text}>Retake</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.button} onPress={handleSavePhoto}>
+            <TouchableOpacity onPress={handleSavePhoto} style={styles.button}>
               <AntDesign name="save" size={24} color="white" />
               <Text style={styles.text}>Save</Text>
             </TouchableOpacity>
@@ -228,5 +283,7 @@ const styles = StyleSheet.create({
     width: "80%",
   },
 });
+
+
 
 export default CameraScreen;
