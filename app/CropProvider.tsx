@@ -8,6 +8,13 @@ interface Crop {
   picturesNeeded: number;
 }
 
+export interface ImageData {
+  uri: string;
+  grainCount: number;
+  sorghumDetected: number;
+  // …add more fields as needed
+}
+
 interface CropContextType {
   crops: Crop[];
   updateCrop: (updatedCrop: Crop) => void;

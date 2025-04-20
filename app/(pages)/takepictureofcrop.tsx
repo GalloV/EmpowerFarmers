@@ -12,16 +12,15 @@ import {
   Image,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useCrops } from "../CropProvider";
+import { useCrops,Crop } from "../CropProvider";
 import { AntDesign } from "@expo/vector-icons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as ImageManipulator from 'expo-image-manipulator';
 
-
-
 const CameraScreen = () => {
   // 1️⃣ State & refs
   const [facing, setFacing] = useState<CameraType>("back");
+  const [parsedCrop, setParsedCrop] = useState<Crop | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
@@ -29,10 +28,10 @@ const CameraScreen = () => {
   const { crop } = useLocalSearchParams();
   const { updateCrop } = useCrops();
 
-  // 2️⃣ Parse any incoming crop data
   useEffect(() => {
     if (crop && typeof crop === "string") {
-      updateCrop(JSON.parse(crop)); // initialize
+      const c: Crop = JSON.parse(crop);
+      setParsedCrop(c);
     }
   }, [crop]);
 
@@ -61,20 +60,21 @@ const CameraScreen = () => {
     );
     return result.uri;
   }
-  
+
   async function runInferenceBase64(imageUri: string) {
     const apiKey  = "o6n9K6mfX5gSzdojmv2p";
-    const modelId = "sorghum-da8cy";
-    const version = "3";
+    const modelId = "sorghum-detection-umdpo-5emeo";
+    const version = "1";
   
     // 1. Read and encode
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
   
-    // 2. POST raw Base64
+    // 2. POST raw Base64 with format=image
     const endpoint =
-      `https://detect.roboflow.com/${modelId}/${version}?api_key=${apiKey}`;
+      `https://detect.roboflow.com/${modelId}/${version}?api_key=${apiKey}&confidence=0.1&format=image`;
+  
     const resp = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -87,17 +87,26 @@ const CameraScreen = () => {
       throw new Error(`HTTP ${resp.status} — ${await resp.text()}`);
     }
   
-    const json = await resp.json();
-    console.log("Predictions:", json.predictions);
-    return json.predictions;
+    // 3. Get the annotated image as a blob
+    const blob = await resp.blob();
+  
+    // 4. Convert blob to a local URI
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = () => {
+      const base64data = reader.result;
+      // You can now use base64data as the source for an Image component
+      setPhotoUri(base64data);
+    };
   }
+  
   
   // 5️⃣ Inference against Roboflow
   const runInference = async (imageUri: string) => {
     try {
       const apiKey  = "o6n9K6mfX5gSzdojmv2p";
-      const modelId = "empower-farmers/sorghum-da8cy";
-      const version = "3";
+      const modelId = "empower-farmers/sorghum-detection-umdpo-5emeo";
+      const version = "1";
       const endpoint =
         `https://detect.roboflow.com/${modelId}/${version}?api_key=${apiKey}`;
   
@@ -146,10 +155,28 @@ const CameraScreen = () => {
     setPhotoUri(null);
   }
 
-  function handleSavePhoto() {
-    // example of app-specific logic
-    router.push("/cropselectionscreen");
+// 7️⃣b. Save & advance logic
+function handleSavePhoto() {
+  if (!photoUri || !parsedCrop) return;
+
+  // build the updated crop
+  const updatedCrop: Crop = {
+    ...parsedCrop,
+    images: [...parsedCrop.images, photoUri],
+    done: parsedCrop.images.length + 1 >= parsedCrop.picturesNeeded,
+  };
+
+  setParsedCrop(updatedCrop);
+
+  updateCrop(updatedCrop);
+
+  if (!updatedCrop.done) {
+    setPhotoUri(null);
+  } else {
+    router.replace("/cropselectionscreen");
   }
+}
+
 
   // 8️⃣ Render
   return (

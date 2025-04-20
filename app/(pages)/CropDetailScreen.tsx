@@ -13,6 +13,9 @@ import { useLocalSearchParams } from "expo-router";
 import { useAuthRequest } from "expo-auth-session/providers/google";
 import * as AuthSession from "expo-auth-session";
 import { Link } from "expo-router";
+import { Image } from "react-native";
+
+
 
 const GOOGLE_CLIENT_ID =
   "117838464217-c3car0drrpt12mc4euk1fln59s8kr93i.apps.googleusercontent.com";
@@ -120,11 +123,29 @@ const CropDetailScreen = () => {
           {parsedCrop.images && parsedCrop.images.length > 0 ? (
             <View style={styles.imageList}>
               <Text style={styles.imageListTitle}>Images:</Text>
-              {parsedCrop.images.map((image: string, index: number) => (
+              {parsedCrop.images.map((uri, idx) => (
+  <View key={idx} style={styles.imageContainer}>
+    <Image
+      source={{ uri }}
+      style={styles.imagePreview}
+      resizeMode="cover"
+    />
+    <View style={styles.overlayInfo}>
+      <Text style={styles.overlayText}>
+        Grains counted: {parsedCrop.grainCounts?.[idx] ?? 0}
+      </Text>
+      <Text style={styles.overlayText}>
+        Sorghum detected: {parsedCrop.sorghumDetected?.[idx] ?? 0}
+      </Text>
+    </View>
+  </View>
+))}
+
+              {/* {parsedCrop.images.map((image: string, index: number) => (
                 <Text key={index} style={styles.imageItem}>
                   {image}
                 </Text>
-              ))}
+              ))} */}
             </View>
           ) : (
             <Text style={styles.noImagesText}>
@@ -157,6 +178,30 @@ const CropDetailScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  imagePreview: {
+    width: "100%",
+    height: 300,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  imageContainer: {
+    marginBottom: 20,
+    position: "relative",      // allow absolute‐positioned overlay
+  },
+  overlayInfo: {
+    bottom: 10,
+    left: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  overlayText: {
+    color: "#fff",
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  
   container: {
     flex: 1,
     justifyContent: "center",
